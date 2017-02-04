@@ -1,0 +1,580 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Oct 18 22:45:45 2016
+# link phone call information to timing of scan
+
+@author: Greg Tarr
+Written in Spyder/ Python 3.5
+"""
+import os
+import numpy as np
+import pandas as pd
+from pandas import ExcelWriter
+
+os.chdir('C:\\Users\\USER\\Documents\\Research\\Error')
+
+reports=pd.read_excel('OOH reports.xlsx', sheetname='OOH clean')
+calls = pd.read_excel('Calls.xlsx', sheetname='OOHcalls')
+
+#what number shift is this?
+""" all of the corrected values added 8 hours onto the evening shifts and left over scans to make the differentiation easier
+to run this script the datasheet needs to be sorted by the "corrected" hours
+"""
+
+shift=[1]*len(reports)
+currentShiftType = ''
+previousShiftType = 'Night'
+shiftNum = 1
+
+reportsSortOnCorr = reports.sort(['Exam_date_timeCorNum'], ascending=[1])
+reportsSortOnCorr.reset_index(drop=True, inplace=True) 
+reports=reportsSortOnCorr
+for i in range (2, len(reports)):
+    if reports.ExamHourCorr[i] <= 8:
+        currentShiftType= 'Night'
+    else:
+        currentShiftType= 'Evening'
+    
+    if currentShiftType == previousShiftType and reports.StudyDayCorr[i]==reports.StudyDayCorr[i-1]:
+        shift[i] = shiftNum
+    else: 
+        shiftNum +=1
+        shift[i]=shiftNum
+    previousShiftType = currentShiftType
+
+ShiftNumber = pd.Series(shift)
+reports['ShiftNumber'] = ShiftNumber.values
+  
+reportsSortOnExam = reports.sort(['Exam_date_timeNum'], ascending=[1])
+reportsSortOnExam.reset_index(drop=True, inplace=True) 
+reports=reportsSortOnExam  
+#8 hours = 0.33
+
+# how many phone calls interrupt the current reporting session (both scan-to-finalise and time intervals)
+
+"""
+four time exposures for the interruptions depedening on the time of report being finalised and exam on pacs
+left over scans are counted as starting from 2200
+"""
+
+numberCallsReport = [0]*len(reports)
+lenCallsReport = [0]*len(reports)
+
+numberCalls15 = [0]*len(reports)
+lenCalls15 = [0]*len(reports)
+
+numberCalls30 = [0]*len(reports)
+lenCalls30 = [0]*len(reports)
+
+numberCalls60 = [0]*len(reports)
+lenCalls60 = [0]*len(reports)
+
+numberCallsMinus15 = [0]*len(reports)
+lenCallsMinus15 = [0]*len(reports)
+
+numberCallsMinus30 = [0]*len(reports)
+lenCallsMinus30 = [0]*len(reports)
+
+numberCallsMinus60 = [0]*len(reports)
+lenCallsMinus60 = [0]*len(reports)
+
+# scan over the whole range of reports
+for i in range(0, len(reports)): 
+    # but for each instance we only want to check 
+    DayOfShift = reports.StudyDay[i]
+    studyDayCalls = calls[(calls.StudyDay>=(DayOfShift-1)) & (calls.StudyDay<=(DayOfShift+1))] # but we only want to check calls around the same day
+    studyDayCalls.reset_index(drop=True, inplace=True)    
+    
+
+    for j in range (0, len(studyDayCalls)):
+        #does the call fall in an interval between the scan coming on pacs and the report being approved?
+        if reports.Exam_date_timeNum[i] < studyDayCalls.DateTimNum[j] < reports.Report_date_timeNum[i]:
+            numberCallsReport[i] +=1
+            lenCallsReport[i] += int(studyDayCalls.CallTimeSec[j])
+        #does the call fall between the scan coming on pacs and 15 minutes later
+        if (reports.Exam_date_timeNum[i]) < studyDayCalls.DateTimNum[j] < (reports.Exam_date_timeNum[i]+0.010416666667): 
+            numberCalls15[i] +=1
+            lenCalls15[i] += int(studyDayCalls.CallTimeSec[j])
+        #does the call fall between the scan coming on pacs and 30 minutes later
+        if (reports.Exam_date_timeNum[i]) < studyDayCalls.DateTimNum[j] < (reports.Exam_date_timeNum[i]+0.020833333333):  
+            numberCalls30[i] +=1
+            lenCalls30[i] += int(studyDayCalls.CallTimeSec[j])
+        # does the call fall between the scan coming on pacs and one hour later
+        if  reports.Exam_date_timeNum[i]< studyDayCalls.DateTimNum[j] < (reports.Exam_date_timeNum[i]+0.041666667): 
+            numberCalls60[i] +=1
+            lenCalls60[i] += int(studyDayCalls.CallTimeSec[j])
+            
+        # does the call fall in the 15 minutes before the report is finalised
+        if (reports.Report_date_timeNum[i]-0.010416666667) < studyDayCalls.DateTimNum[j] < reports.Report_date_timeNum[i]: 
+            numberCallsMinus15[i] +=1
+            lenCallsMinus15[i] += int(studyDayCalls.CallTimeSec[j])
+        #does the call fall in the 30 minutes before the report is finalised
+        if (reports.Report_date_timeNum[i]-0.020833333333) < studyDayCalls.DateTimNum[j] < reports.Report_date_timeNum[i]:  
+            numberCallsMinus30[i] +=1
+            lenCallsMinus30[i] += int(studyDayCalls.CallTimeSec[j])
+        #does the call fall in the 60 minutes before the report is finalisd
+        if (reports.Report_date_timeNum[i]-0.041666667) < studyDayCalls.DateTimNum[j] < reports.Report_date_timeNum[i]: 
+            numberCallsMinus60[i] +=1
+            lenCallsMinus60[i] += int(studyDayCalls.CallTimeSec[j])
+            continue
+    
+#append the results to the dataframe    
+#number of calls
+numberCallsReport = pd.Series(numberCallsReport)
+reports['lenCallsReport'] = numberCallsReport.values
+numberCalls15 = pd.Series(numberCalls15)
+reports['numberCalls15'] = numberCalls15.values
+numberCalls30 = pd.Series(numberCalls30)
+reports['numberCalls30'] = numberCalls30.values
+numberCalls60 = pd.Series(numberCalls60)
+reports['numberCalls60'] = numberCalls60.values
+numberCallsMinus15 = pd.Series(numberCallsMinus15)
+reports['numberCallsMinus15'] = numberCallsMinus15.values
+numberCallsMinus30 = pd.Series(numberCallsMinus30)
+reports['numberCallsMinus30'] = numberCallsMinus30.values
+numberCallsMinus60 = pd.Series(numberCallsMinus60)
+reports['numberCallsMinus60'] = numberCallsMinus60.values
+
+#call lengths
+lenCallsReport = pd.Series(lenCallsReport)
+reports['lenCallsReport'] = lenCallsReport.values
+lenCalls15 = pd.Series(lenCalls15)
+reports['lenCalls15'] = lenCalls15.values
+lenCalls30 = pd.Series(lenCalls30)
+reports['lenCalls30'] = lenCalls30.values
+lenCalls60 = pd.Series(lenCalls60)
+reports['lenCalls60'] = lenCalls60.values
+lenCallsMinus15 = pd.Series(lenCallsMinus15)
+reports['lenCallsMinus15'] = lenCallsMinus15.values
+lenCallsMinus30 = pd.Series(lenCallsMinus30)
+reports['lenCallsMinus30'] = lenCallsMinus30.values
+lenCallsMinus60 = pd.Series(lenCallsMinus60)
+reports['lenCallsMinus60'] = lenCallsMinus60.values
+
+#scan number in shift
+
+reportsSortOnExam = reports.sort(['Exam_date_timeNum'], ascending=[1])
+reportsSortOnExam.reset_index(drop=True, inplace=True) 
+reports=reportsSortOnExam  
+
+
+scanNumberInShift = [1]*len(reports)
+for i in range (1,len(scanNumberInShift)):
+    currentScanNumber=1
+    shiftInQuestion = reports.ShiftNumber[i]    
+    shiftExams = (reports[reports.ShiftNumber == shiftInQuestion])
+    shiftExams.reset_index(drop=True, inplace=True)    
+#cycle through all of the scans reported in the shift, adding up the total until reaching the scan in question
+    for j in range(0, len(shiftExams)):
+        timeStampScan1 = reports.Exam_date_timeNum[i] #time the current scan arrives on pacs
+        timeStampScan2 = shiftExams.Exam_date_timeNum[j] #time the previous scan arrives on pacs     
+        if timeStampScan2 < timeStampScan1:
+            currentScanNumber +=1
+            scanNumberInShift[i]=currentScanNumber
+        else:
+            break
+
+scanNumberInShift = pd.Series(scanNumberInShift)
+reports['scanNumberInShift'] = scanNumberInShift.values        
+
+# how many scans has the person reported prior to the current scan in this shift
+# need both exam and report dates sorted - where there are two scans eg. two body regions 
+#in one patient this is counted as 2 scan but both are assigned the same number
+
+
+reportsSortOnReport = reports.sort(['Report_date_timeNum'], ascending=[1])
+reportsSortOnReport.reset_index(drop=True, inplace=True) 
+reports=reportsSortOnReport  
+
+priorScansReported =[0]*len(reports)
+for i in range (1, len(priorScansReported)):
+#each time we return to change the 'i' aka the scan we re-set the current scan number
+    currentScanNumber = 0
+#get the list of scans reported in this shift and reset the index
+    shiftInQuestion = reports.ShiftNumber[i]    
+    shiftReports = (reports[reports.ShiftNumber == shiftInQuestion])
+    shiftReports.reset_index(drop=True, inplace=True)    
+#cycle through all of the scans reported in the shift, adding up the total until reaching the scan in question
+    for j in range(0, len(shiftReports)):
+        timeStampScan1 = reports.Exam_date_timeNum[i] #time the current scan arrives on pacs
+        timeStampScan2 = shiftReports.Exam_date_timeNum[j] #time the previous scan arrives on pacs
+        timeStampReport1 = reports.Report_date_timeNum[i]
+        timeStampReport2 = shiftReports.Report_date_timeNum[j]        
+        if timeStampReport2 < timeStampReport1:
+            currentScanNumber +=1
+            priorScansReported[i]=currentScanNumber
+        else:
+            break
+
+priorScansReported = pd.Series(priorScansReported)
+reports['priorScansReported'] = priorScansReported.values
+
+reportsSortOnExam = reports.sort(['Exam_date_timeNum'], ascending=[1])
+reportsSortOnExam.reset_index(drop=True, inplace=True) 
+reports=reportsSortOnExam  
+
+#have the scans been reported in selective order?
+numberOutOfOrder = [0]*len(reports)
+outOfOrderYesNo = [0]*len(reports)
+for i in range (0, len(numberOutOfOrder)):
+    numberOutOfOrder[i] = scanNumberInShift[i] - (priorScansReported[i]+1)
+    if scanNumberInShift[i]==(priorScansReported[i]+1):
+        numberOutOfOrder[i] = 0
+    else:
+        numberOutOfOrder[i] = 1
+numberOutOfOrder = pd.Series(numberOutOfOrder)
+reports['numberOutOfOrder'] = numberOutOfOrder.values
+
+
+outOfOrderYesNo = pd.Series(outOfOrderYesNo)
+reports['outOfOrderYesNo'] = outOfOrderYesNo.values
+#noncomplex scans
+priorHeadRenalColicReported =[0]*len(reports)
+for i in range (1, len(priorHeadRenalColicReported)):
+#each time we return to change the 'i' aka the scan we re-set the current scan number
+    currentScanNumber = 0
+#get the list of scans reported in this shift and reset the index
+    shiftInQuestion = reports.ShiftNumber[i]    
+    shiftReports = (reports[reports.ShiftNumber == shiftInQuestion])
+    shiftReports.reset_index(drop=True, inplace=True)    
+#cycle through all of the scans reported in the shift, adding up the total until reaching the scan in question
+    for j in range(0, len(shiftReports)):
+#check if scan(j) is the scan type we are looking for
+        if shiftReports.Head_RenalColic[j]==0:
+            priorHeadRenalColicReported[i]=currentScanNumber
+            continue
+#if it is the type we are looking for then add it on the list        
+        timeStampScan1 = reports.Exam_date_timeNum[i] #time the current scan arrives on pacs
+        timeStampScan2 = shiftReports.Exam_date_timeNum[j] #time the previous scan arrives on pacs
+        timeStampReport1 = reports.Report_date_timeNum[i]
+        timeStampReport2 = shiftReports.Report_date_timeNum[j]        
+        if timeStampScan2 < timeStampScan1:
+            currentScanNumber +=1
+            priorHeadRenalColicReported[i]=currentScanNumber
+        #if the scan were are questioning arrived on PACS *AFTER* the scan we are testing, then break
+        elif timeStampScan2>timeStampScan1:
+            break
+
+priorHeadRenalColicReported = pd.Series(priorHeadRenalColicReported)
+reports['priorHeadRenalColicReported'] = priorHeadRenalColicReported.values
+
+#complex scans
+priorComplexScansReported =[0]*len(reports)
+for i in range (1, len(priorComplexScansReported)):
+#each time we return to change the 'i' aka the scan we re-set the current scan number
+    currentScanNumber = 0
+#get the list of scans reported in this shift and reset the index
+    shiftInQuestion = reports.ShiftNumber[i]    
+    shiftReports = (reports[reports.ShiftNumber == shiftInQuestion])
+    shiftReports.reset_index(drop=True, inplace=True)    
+#cycle through all of the scans reported in the shift, adding up the total until reaching the scan in question
+    for j in range(0, len(shiftReports)):
+#check if scan(j) is the scan type we are looking for
+        if shiftReports.Head_RenalColic[j]==1:
+            priorComplexScansReported[i]=currentScanNumber
+            continue
+#if it is the type we are looking for then add it on the list        
+        timeStampScan1 = reports.Exam_date_timeNum[i] #time the current scan arrives on pacs
+        timeStampScan2 = shiftReports.Exam_date_timeNum[j] #time the previous scan arrives on pacs
+        timeStampReport1 = reports.Report_date_timeNum[i]
+        timeStampReport2 = shiftReports.Report_date_timeNum[j]        
+        if timeStampScan2 < timeStampScan1:
+            currentScanNumber +=1
+            priorComplexScansReported[i]=currentScanNumber
+        #if the scan were are questioning arrived on PACS *AFTER* the scan we are testing, then break
+        elif timeStampScan2>timeStampScan1:
+            break
+
+priorComplexScansReported = pd.Series(priorComplexScansReported)
+reports['priorComplexScansReported'] = priorComplexScansReported.values
+
+#trauma scans
+priorTraumaScansReported =[0]*len(reports)
+for i in range (1, len(priorTraumaScansReported)):
+#each time we return to change the 'i' aka the scan we re-set the current scan number
+    currentScanNumber = 0
+#get the list of scans reported in this shift and reset the index
+    shiftInQuestion = reports.ShiftNumber[i]    
+    shiftReports = (reports[reports.ShiftNumber == shiftInQuestion])
+    shiftReports.reset_index(drop=True, inplace=True)    
+#cycle through all of the scans reported in the shift, adding up the total until reaching the scan in question
+    for j in range(0, len(shiftReports)):
+#check if scan(j) is the scan type we are looking for
+        if shiftReports.MultiRegionTrauma[j]==0:
+            priorTraumaScansReported[i]=currentScanNumber
+            continue
+#if it is the type we are looking for then add it on the list        
+        timeStampScan1 = reports.Exam_date_timeNum[i] #time the current scan arrives on pacs
+        timeStampScan2 = shiftReports.Exam_date_timeNum[j] #time the previous scan arrives on pacs
+        timeStampReport1 = reports.Report_date_timeNum[i]
+        timeStampReport2 = shiftReports.Report_date_timeNum[j]        
+        if timeStampScan2 < timeStampScan1:
+            currentScanNumber +=1
+            priorTraumaScansReported[i]=currentScanNumber
+        #if the scan were are questioning arrived on PACS *AFTER* the scan we are testing, then break
+        elif timeStampScan2>timeStampScan1:
+            break
+
+priorTraumaScansReported = pd.Series(priorTraumaScansReported)
+reports['priorTraumaScansReported'] = priorTraumaScansReported.values
+
+#stroke imaging 
+priorStrokeStudiesReported =[0]*len(reports)
+for i in range (1, len(priorStrokeStudiesReported)):
+#each time we return to change the 'i' aka the scan we re-set the current scan number
+    currentScanNumber = 0
+#get the list of scans reported in this shift and reset the index
+    shiftInQuestion = reports.ShiftNumber[i]    
+    shiftReports = (reports[reports.ShiftNumber == shiftInQuestion])
+    shiftReports.reset_index(drop=True, inplace=True)    
+#cycle through all of the scans reported in the shift, adding up the total until reaching the scan in question
+    for j in range(0, len(shiftReports)):
+#check if scan(j) is the scan type we are looking for
+        if shiftReports.Stroke[j]==0:
+            priorStrokeStudiesReported[i]=currentScanNumber
+            continue
+#if it is the type we are looking for then add it on the list        
+        timeStampScan1 = reports.Exam_date_timeNum[i] #time the current scan arrives on pacs
+        timeStampScan2 = shiftReports.Exam_date_timeNum[j] #time the previous scan arrives on pacs
+        timeStampReport1 = reports.Report_date_timeNum[i]
+        timeStampReport2 = shiftReports.Report_date_timeNum[j]        
+        if timeStampScan2 < timeStampScan1:
+            currentScanNumber +=1
+            priorStrokeStudiesReported[i]=currentScanNumber
+        #if the scan were are questioning arrived on PACS *AFTER* the scan we are testing, then break
+        elif timeStampScan2>timeStampScan1:
+            break
+priorStrokeStudiesReported = pd.Series(priorStrokeStudiesReported)
+reports['priorStrokeStudiesReported'] = priorStrokeStudiesReported.values
+
+
+#how many scans are unreported by the time of reporting the present scan?
+unreportedScansAtTimeOfReporting = [0]*len(reports)
+for i in range (0, len(unreportedScansAtTimeOfReporting)):
+#each time we return to change the 'i' aka the scan we re-set the current scan number
+    currentUnreported = 0
+#get the list of scans reported in this shift
+    shiftInQuestion = reports.ShiftNumber[i]    
+#and the list of scans put on pacs that day and the day prior
+    DayOfShift = reports.StudyDayCorr[i]
+    ReportsAroundShift = reports[(reports.StudyDayCorr>= (DayOfShift-1)) &  (reports.StudyDayCorr<= (DayOfShift))]
+    
+    
+    ReportsAroundShift.reset_index(drop=True, inplace=True)  
+    #cycle through all of the scans reported in the shift, adding up the total until reaching the scan in question
+    for j in range(0, len(ReportsAroundShift)):
+#for each scan(j) ask if it is unreported at the time of the reporting scan(i).
+#is scan(j) the same scan as scan(i)
+        if ReportsAroundShift.Exam_date_timeNum[j] == reports.Exam_date_timeNum[i]:
+            continue
+# if scan(j) is not on PACS at the time of reporting scan(i) then continue the loop
+        if ReportsAroundShift.Exam_date_timeNum[j] > reports.Exam_date_timeNum[i]:
+            continue
+# if scan(j) is already reported, then go to next elif            
+        elif ReportsAroundShift.Report_date_timeNum[j]>reports.Exam_date_timeNum[i]:
+            currentUnreported+=1
+            unreportedScansAtTimeOfReporting[i]=currentUnreported
+
+unreportedScansAtTimeOfReporting = pd.Series(unreportedScansAtTimeOfReporting)
+reports['unreportedScansAtTimeOfReporting'] = unreportedScansAtTimeOfReporting.values
+            
+            
+#what is the max number of scans(j) unreported during the time the scan(i) is unreported?
+maxNumUnreportedScans = [0]*len(reports)
+for i in range (0, len(maxNumUnreportedScans)):
+#each time we return to change the 'i' aka the scan we re-set the current scan number
+    currentUnreported = 0
+#get the list of scans reported in this shift
+    shiftInQuestion = reports.ShiftNumber[i]    
+#and the list of scans put on pacs that day and the day prior
+    DayOfShift = reports.StudyDayCorr[i]
+    ReportsAroundShift = reports[(reports.StudyDayCorr>= (DayOfShift-1)) &  (reports.StudyDayCorr<= (DayOfShift))]
+    
+    
+    ReportsAroundShift.reset_index(drop=True, inplace=True)  
+    
+    #define time period scan(i) is unreported
+    scanIonPacs = reports.Exam_date_timeNum[i]
+    scanIreported = reports.Report_date_timeNum[i]
+    #cycle through all of the scans reported in the shift, adding up the total until reaching the scan in question
+    for j in range(0, len(ReportsAroundShift)):
+        #define time period scan(j) is unreported
+        scanJonPacs = ReportsAroundShift.Exam_date_timeNum[j]
+        scanJreported = ReportsAroundShift.Report_date_timeNum[j]
+#for each scan(j) ask if it is unreported at any time scan(i) is unreported.
+#is scan(j) = scan(i) then skip
+        if ReportsAroundShift.Exam_date_timeNum[j] == reports.Exam_date_timeNum[i]:
+            continue
+        
+#scan(j)  either arrives while scan(j) is unreported:
+        A = scanIonPacs < scanJonPacs < scanIreported
+#or scan(j) is reported while scan(i) is unreported:
+        B = scanIonPacs < scanJreported < scanIreported
+#or scan(j) remains unreported while scan(i) arrives and is reported
+        C = (scanJonPacs < scanIonPacs) & (scanIreported < scanJreported)
+        
+# if scan(j) is already reported, then go to next elif            
+        if (A or B or C):
+            currentUnreported+=1
+            maxNumUnreportedScans[i]=currentUnreported
+
+maxNumUnreportedScans = pd.Series(maxNumUnreportedScans)
+reports['maxNumUnreportedScans'] = maxNumUnreportedScans.values            
+        
+            
+"""
+what about shift level variables
+
+ useful values; 
+22:00:00 = 0.9166666667
+16:30:00 = 0.6875
+08:00:00 = 0.3333333333
+
+"""
+shiftVariables = pd.DataFrame({}) 
+shiftData = [0]* (max(reports.ShiftNumber))
+shiftNum = [0]* len(shiftData)
+shiftReg = [0]* len(shiftData)
+dayOfWeek = [0]* len(shiftData)
+ShiftType = [0] * len(shiftData)
+numberOfPhoneCallsInShift = [0] * len(shiftData)
+lengthOfPhoneCallsInShift = [0] * len(shiftData)
+AnyCT = [0] * len(shiftData)
+SimpleCT = [0] * len(shiftData)
+NonSimpleCT = [0] * len(shiftData)
+TraumaCT = [0] * len(shiftData)
+StrokeCT  = [0] * len(shiftData)
+NumberReviews = [0] * len(shiftData)
+reviewsPerScan = [0] * len(shiftData)
+registrarYear = [0] * len(shiftData)
+MonthsExperience = [0] * len(shiftData)
+UnreportedScanMinutes = [0] *len(shiftData)
+scansLeftOver = ['nan']*len(shiftData)
+UnreportedScanMinutes = [0] *len(shiftData)
+SumUnreportedScansAtTimeOfReporting = [0] *len(shiftData)
+maxNumUnreportedScansShift = [0] *len(shiftData)
+numberOutOfOrderShift = [0] *len(shiftData)
+outOfOrderYesNoShift = [0] *len(shiftData)
+
+#gather the data for each shift
+for i in range (0, len(shiftData)):
+    #take the data for each shift and reset the index
+
+    shiftData = reports[reports.ShiftNumber == (i+1)]
+#find the index of study day(i)
+    nextShift = reports[reports.ShiftNumber == i+2]    
+    DayOfShift=shiftData.index[0]
+    shiftData.reset_index(drop=True, inplace=True)  
+    
+    #start getting the variables
+    shiftNum[i] = i+1
+    shiftReg[i] = shiftData.Rep_Author[0]
+    dayOfWeek[i] = shiftData.Rep_DayName[0]
+    ShiftType[i] = shiftData.ShiftType[0]
+    AnyCT[i] = len(shiftData)
+    SimpleCT[i] = sum(shiftData.Head_RenalColic)
+    NonSimpleCT[i] = AnyCT[i]-SimpleCT[i]
+    TraumaCT[i] = sum(shiftData.MultiRegionTrauma)
+    StrokeCT[i] = sum(shiftData.Stroke)
+    NumberReviews[i] = sum(shiftData.ReviewNum)
+    reviewsPerScan[i] = NumberReviews[i]/AnyCT[i]
+    registrarYear[i] = shiftData.YearNum[0]
+    MonthsExperience[i] = shiftData.TimeMonths[0]
+    UnreportedScanMinutes [i] = sum(shiftData.Time_to_report)
+    SumUnreportedScansAtTimeOfReporting[i] = sum(shiftData.unreportedScansAtTimeOfReporting)
+    maxNumUnreportedScansShift[i] = sum(shiftData.maxNumUnreportedScans)
+    numberOutOfOrderShift[i] = sum(shiftData.numberOutOfOrder)
+    outOfOrderYesNoShift[i] = sum(shiftData.outOfOrderYesNo)
+    
+# number of left over studies for the evening reg
+    if ShiftType[i] == "EveningShift":
+        NextShiftData = reports[reports.ShiftNumber == (i+2)]
+        scansLeftOver[i] = sum(NextShiftData.LeftOverStudiesNumber)
+          
+# number of phone calls
+# total length of phone calls
+
+#find the day before this for the evening shift calls from 2200 to 0000
+    DminusOne = calls[calls.StudyDay==(DayOfShift-1)]
+# the other calls are all on the 'study day'
+    D = calls[(calls.StudyDay==DayOfShift)]
+    # and the evening shift calls are between 1630 and 2200
+    EveningShiftCalls=D[(D.StartTime>=0.6875)&(D.StartTime<0.9166666667)]
+    # for the night shift we have to add the two together
+    NightShiftCalls = D[D.StartTime<=0.3333333]
+    NightShiftCalls = NightShiftCalls.append(DminusOne[DminusOne.StartTime>=0.9166666667])
+#reset both indices    
+    EveningShiftCalls.reset_index(drop=True, inplace=True) 
+    NightShiftCalls.reset_index(drop=True, inplace=True) 
+    
+    if ShiftType[i] == "EveningShift":
+        lengthOfPhoneCallsInShift[i] = sum(EveningShiftCalls.CallTimeSec)
+        numberOfPhoneCallsInShift[i] = len(EveningShiftCalls)
+    elif ShiftType[i] == "NightShift":
+        lengthOfPhoneCallsInShift[i] = sum(NightShiftCalls.CallTimeSec)
+        numberOfPhoneCallsInShift[i] = len(NightShiftCalls)
+
+numberOfPhoneCallsInShift[0]=18
+lengthOfPhoneCallsInShift[0]=1572
+
+#then write code to send each variable to the shiftVariables dataframe
+shiftVariables = pd.DataFrame({}) 
+shiftNum = pd.Series(shiftNum)
+shiftVariables['shiftNum'] = shiftNum.values 
+shiftReg = pd.Series(shiftReg)
+shiftVariables['shiftReg'] = shiftReg.values 
+dayOfWeek = pd.Series(dayOfWeek)
+shiftVariables['dayOfWeek'] = dayOfWeek.values 
+ShiftType = pd.Series(ShiftType)
+shiftVariables['ShiftType'] = ShiftType.values 
+registrarYear = pd.Series(registrarYear)
+shiftVariables['registrarYear'] = registrarYear.values 
+MonthsExperience = pd.Series(MonthsExperience)
+shiftVariables['MonthsExperience'] = MonthsExperience.values 
+AnyCT = pd.Series(AnyCT)
+shiftVariables['AnyCT'] = AnyCT.values 
+SimpleCT = pd.Series(SimpleCT)
+shiftVariables['SimpleCT'] = SimpleCT.values 
+NonSimpleCT = pd.Series(NonSimpleCT)
+shiftVariables['NonSimpleCT'] = NonSimpleCT.values 
+TraumaCT = pd.Series(TraumaCT)
+shiftVariables['TraumaCT'] = TraumaCT.values 
+StrokeCT = pd.Series(StrokeCT)
+shiftVariables['StrokeCT'] = StrokeCT.values 
+numberOfPhoneCallsInShift = pd.Series(numberOfPhoneCallsInShift)
+shiftVariables['numberOfPhoneCallsInShift'] = numberOfPhoneCallsInShift.values 
+lengthOfPhoneCallsInShift = pd.Series(lengthOfPhoneCallsInShift)
+shiftVariables['lengthOfPhoneCallsInShift'] = lengthOfPhoneCallsInShift.values 
+NumberReviews = pd.Series(NumberReviews)
+shiftVariables['NumberReviews'] = NumberReviews.values 
+reviewsPerScan = pd.Series(reviewsPerScan)
+shiftVariables['reviewsPerScan'] = reviewsPerScan.values 
+UnreportedScanMinutes = pd.Series(UnreportedScanMinutes)
+shiftVariables['UnreportedScanMinutes'] = UnreportedScanMinutes.values 
+scansLeftOver = pd.Series(scansLeftOver)
+shiftVariables['scansLeftOver'] = scansLeftOver.values 
+UnreportedScanMinutes = pd.Series(UnreportedScanMinutes)
+shiftVariables['UnreportedScanMinutes'] = UnreportedScanMinutes.values 
+SumUnreportedScansAtTimeOfReporting = pd.Series(SumUnreportedScansAtTimeOfReporting)
+shiftVariables['SumUnreportedScansAtTimeOfReporting'] = SumUnreportedScansAtTimeOfReporting.values 
+maxNumUnreportedScansShift = pd.Series(maxNumUnreportedScansShift)
+shiftVariables['maxNumUnreportedScansShift'] = maxNumUnreportedScansShift.values 
+numberOutOfOrderShift = pd.Series(numberOutOfOrderShift)
+shiftVariables['numberOutOfOrderShift'] = numberOutOfOrderShift.values 
+outOfOrderYesNoShift = pd.Series(outOfOrderYesNoShift)
+shiftVariables['outOfOrderYesNoShift'] = outOfOrderYesNoShift.values 
+
+#len(dataframe[dataframe.column>0])
+#now save the output to excel
+ReportLevelOutput = ExcelWriter('reportOutput.xlsx')
+reports.to_excel(ReportLevelOutput,'Sheet1')
+ReportLevelOutput.save()
+
+ShiftLevelOutput = ExcelWriter('shiftOutput.xlsx')
+shiftVariables.to_excel(ShiftLevelOutput,'Sheet1')
+ShiftLevelOutput.save()
+
+#to calls - but haVe made no output to this sheet
+#CallsOut = ExcelWriter('Calls.xlsx')
+#calls.to_excel(CallsOut,'OOHcalls')
+#CallsOut.save()
