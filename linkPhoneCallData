@@ -115,7 +115,7 @@ for i in range(0, len(reports)):
 #append the results to the dataframe    
 #number of calls
 numberCallsReport = pd.Series(numberCallsReport)
-reports['lenCallsReport'] = numberCallsReport.values
+reports['numberCallsReport'] = numberCallsReport.values
 numberCalls15 = pd.Series(numberCalls15)
 reports['numberCalls15'] = numberCalls15.values
 numberCalls30 = pd.Series(numberCalls30)
@@ -374,6 +374,7 @@ for i in range (0, len(unreportedScansAtTimeOfReporting)):
 unreportedScansAtTimeOfReporting = pd.Series(unreportedScansAtTimeOfReporting)
 reports['unreportedScansAtTimeOfReporting'] = unreportedScansAtTimeOfReporting.values
             
+           
             
 #what is the max number of scans(j) unreported during the time the scan(i) is unreported?
 maxNumUnreportedScans = [0]*len(reports)
@@ -575,13 +576,53 @@ shiftVariables['numberOutOfOrderAbsShift'] = numberOutOfOrderAbsShift.values
 outOfOrderYesNoShift = pd.Series(outOfOrderYesNoShift)
 shiftVariables['outOfOrderYesNoShift'] = outOfOrderYesNoShift.values 
 
+#how many studies will be left over on the shift of each report?
+leftOverReport = ['nan']*len(reports)
+for i in range (0, 7045):
+    shiftInQuestion = reports.ShiftNumber[i] 
+    leftOverReport[i] = shiftVariables.scansLeftOver[shiftInQuestion]
+    
+leftOverReport = pd.Series(leftOverReport)
+reports['leftOverReport'] = leftOverReport.values 
+
+
+#how many scans are reported in the hour before reporting the present scan?
+reportedScansPriorHour = [0]*len(reports)
+for i in range (0, len(reportedScansPriorHour)):
+#each time we return to change the 'i' aka the scan we re-set the current scan number
+    currentReported = 0
+#get the list of scans reported in this shift
+    shiftInQuestion = reports.ShiftNumber[i]    
+#and the list of scans put on pacs for that shift
+    shiftReports = reports[(reports.ShiftNumber==shiftInQuestion)]
+    shiftReports.reset_index(drop=True, inplace=True)  
+    
+    #define time period scan(i) is unreported
+    scanIreported = reports.Report_date_timeNum[i]
+    #cycle through all of the scans reported in the shift, adding up the total until reaching the scan in question
+    for j in range(0, len(shiftReports)):
+        #define time period scan(j) is unreported
+        scanJreported = shiftReports.Report_date_timeNum[j]
+#is scan(j) = scan(i) then skip
+        if scanJreported == scanIreported:
+            continue            
+# if scan(j) was reported in the past hour, then add it in, else break      
+        if (scanIreported-0.041666667) < scanJreported < scanIreported:
+            currentReported+=1
+            reportedScansPriorHour[i]=currentReported
+        elif scanJreported > scanIreported: 
+            continue
+
+reportedScansPriorHour = pd.Series(reportedScansPriorHour)
+reports['reportedScansPriorHour'] = reportedScansPriorHour.values     
+
 #len(dataframe[dataframe.column>0])
 #now save the output to excel
-"""
+
 ReportLevelOutput = ExcelWriter('reportOutput.xlsx')
 reports.to_excel(ReportLevelOutput,'Sheet1')
 ReportLevelOutput.save()
-"""
+
 ShiftLevelOutput = ExcelWriter('shiftOutput.xlsx')
 shiftVariables.to_excel(ShiftLevelOutput,'Sheet1')
 ShiftLevelOutput.save()
